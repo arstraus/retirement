@@ -208,18 +208,18 @@ def main():
                             use_container_width=True):
                         st.session_state['apply_scenario'] = True
                         
+                        # Update num_adults FIRST (ensure it's an int)
+                        st.session_state['num_adults'] = int(len(scenario_data.get('people', [])))
+                        
                         # Update session state for all person inputs
                         for i, person_data in enumerate(scenario_data.get('people', [])):
                             st.session_state[f'name_{i}'] = person_data['name']
-                            st.session_state[f'age_{i}'] = person_data['age']
-                            st.session_state[f'ret_age_{i}'] = person_data['retirement_age']
-                            st.session_state[f'income_{i}'] = person_data['current_income']
-                            st.session_state[f'rsu_vesting_{i}'] = person_data.get('annual_rsu_vesting', 0)
-                            st.session_state[f'growth_{i}'] = person_data['income_growth_rate']
-                            st.session_state[f'ret_income_{i}'] = person_data['retirement_income']
-                        
-                        # Update num_adults
-                        st.session_state['num_adults'] = len(scenario_data.get('people', []))
+                            st.session_state[f'age_{i}'] = int(person_data['age'])
+                            st.session_state[f'ret_age_{i}'] = int(person_data['retirement_age'])
+                            st.session_state[f'income_{i}'] = int(person_data['current_income'])
+                            st.session_state[f'rsu_vesting_{i}'] = int(person_data.get('annual_rsu_vesting', 0))
+                            st.session_state[f'growth_{i}'] = float(person_data['income_growth_rate'])
+                            st.session_state[f'ret_income_{i}'] = int(person_data['retirement_income'])
                         
                         # Set account types checkbox if scenario has account data
                         if scenario_data.get('financial', {}).get('account_balances') is not None:
@@ -239,6 +239,10 @@ def main():
                         st.session_state['loaded_scenario'] = None
                         st.session_state['apply_scenario'] = False
                         st.session_state['account_types_checkbox'] = False
+                        
+                        # Clear num_adults
+                        if 'num_adults' in st.session_state:
+                            del st.session_state['num_adults']
                         
                         # Clear person data from session state
                         for i in range(4):  # Max 4 adults
@@ -264,6 +268,10 @@ def main():
                 st.session_state['loaded_scenario'] = None
                 st.session_state['apply_scenario'] = False
                 st.session_state['account_types_checkbox'] = False
+                
+                # Clear num_adults
+                if 'num_adults' in st.session_state:
+                    del st.session_state['num_adults']
                 
                 # Clear person data from session state
                 for i in range(4):  # Max 4 adults
@@ -393,7 +401,10 @@ def main():
         st.subheader("Household")
 
         # Pre-populate from loaded scenario if available
-        if loaded_scenario:
+        # Check session state first, then loaded scenario
+        if 'num_adults' in st.session_state:
+            default_num_adults = st.session_state['num_adults']
+        elif loaded_scenario:
             default_num_adults = len(loaded_scenario['people'])
         else:
             default_num_adults = 1
