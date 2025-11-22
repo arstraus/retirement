@@ -207,15 +207,52 @@ def main():
                         type="primary",
                             use_container_width=True):
                         st.session_state['apply_scenario'] = True
+                        
+                        # Update session state for all person inputs
+                        for i, person_data in enumerate(scenario_data.get('people', [])):
+                            st.session_state[f'name_{i}'] = person_data['name']
+                            st.session_state[f'age_{i}'] = person_data['age']
+                            st.session_state[f'ret_age_{i}'] = person_data['retirement_age']
+                            st.session_state[f'income_{i}'] = person_data['current_income']
+                            st.session_state[f'rsu_vesting_{i}'] = person_data.get('annual_rsu_vesting', 0)
+                            st.session_state[f'growth_{i}'] = person_data['income_growth_rate']
+                            st.session_state[f'ret_income_{i}'] = person_data['retirement_income']
+                        
+                        # Update num_adults
+                        st.session_state['num_adults'] = len(scenario_data.get('people', []))
+                        
                         # Set account types checkbox if scenario has account data
                         if scenario_data.get('financial', {}).get('account_balances') is not None:
                             st.session_state['account_types_checkbox'] = True
+                            # Also update account balance session state
+                            balances = scenario_data['financial']['account_balances']
+                            st.session_state['traditional_401k'] = balances.get('traditional_401k', 0)
+                            st.session_state['traditional_ira'] = balances.get('traditional_ira', 0)
+                            st.session_state['roth_401k'] = balances.get('roth_401k', 0)
+                            st.session_state['roth_ira'] = balances.get('roth_ira', 0)
+                            st.session_state['taxable'] = balances.get('taxable', 0)
+                            st.session_state['hsa'] = balances.get('hsa', 0)
+                        
                         st.rerun()
                 with col_clear:
                     if st.button("Clear", use_container_width=True):
                         st.session_state['loaded_scenario'] = None
                         st.session_state['apply_scenario'] = False
                         st.session_state['account_types_checkbox'] = False
+                        
+                        # Clear person data from session state
+                        for i in range(4):  # Max 4 adults
+                            for key in [f'name_{i}', f'age_{i}', f'ret_age_{i}', f'income_{i}', 
+                                       f'rsu_vesting_{i}', f'growth_{i}', f'ret_income_{i}']:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                        
+                        # Clear account balance data
+                        for key in ['traditional_401k', 'traditional_ira', 'roth_401k', 
+                                   'roth_ira', 'taxable', 'hsa']:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        
                         st.rerun()
             except Exception as e:
                 st.error(f"Error loading scenario: {str(e)}")
@@ -227,6 +264,20 @@ def main():
                 st.session_state['loaded_scenario'] = None
                 st.session_state['apply_scenario'] = False
                 st.session_state['account_types_checkbox'] = False
+                
+                # Clear person data from session state
+                for i in range(4):  # Max 4 adults
+                    for key in [f'name_{i}', f'age_{i}', f'ret_age_{i}', f'income_{i}', 
+                               f'rsu_vesting_{i}', f'growth_{i}', f'ret_income_{i}']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                
+                # Clear account balance data
+                for key in ['traditional_401k', 'traditional_ira', 'roth_401k', 
+                           'roth_ira', 'taxable', 'hsa']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                
                 st.rerun()
 
         # Save scenario section
