@@ -369,37 +369,43 @@ class RetirementReportGenerator:
         elements.append(Paragraph("Wealth Projections", self.styles['CustomTitle']))
         elements.append(Spacer(1, 0.2*inch))
         
-        try:
-            # 1. Asset Growth Chart
-            elements.append(Paragraph("Asset Growth Over Time", self.styles['SectionHeader']))
-            asset_chart = self._create_asset_chart(forecast_df)
-            if asset_chart:
-                elements.append(asset_chart)
-                elements.append(Spacer(1, 0.3*inch))
-            
-            # 2. Income vs Expenses Chart
-            elements.append(Paragraph("Income and Expenses", self.styles['SectionHeader']))
-            income_chart = self._create_income_expenses_chart(forecast_df)
-            if income_chart:
-                elements.append(income_chart)
-                elements.append(Spacer(1, 0.3*inch))
-            
-            # 3. Cash Flow Chart
-            elements.append(PageBreak())
-            elements.append(Paragraph("Annual Cash Flow", self.styles['SectionHeader']))
-            cashflow_chart = self._create_cashflow_chart(forecast_df)
-            if cashflow_chart:
-                elements.append(cashflow_chart)
-                elements.append(Spacer(1, 0.3*inch))
-                
-        except Exception as e:
-            elements.append(Paragraph(f"Note: Charts could not be generated: {str(e)}", self.styles['CustomBody']))
+        # Add note about charts
+        note = Paragraph(
+            "<i>Note: Interactive charts are available in the web application. "
+            "Static chart generation may not be available in all deployment environments.</i>",
+            self.styles['CustomBody']
+        )
+        elements.append(note)
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # 1. Asset Growth Chart
+        elements.append(Paragraph("Asset Growth Over Time", self.styles['SectionHeader']))
+        asset_chart = self._create_asset_chart(forecast_df)
+        if asset_chart:
+            elements.append(asset_chart)
+        elements.append(Spacer(1, 0.3*inch))
+        
+        # 2. Income vs Expenses Chart
+        elements.append(Paragraph("Income and Expenses", self.styles['SectionHeader']))
+        income_chart = self._create_income_expenses_chart(forecast_df)
+        if income_chart:
+            elements.append(income_chart)
+        elements.append(Spacer(1, 0.3*inch))
+        
+        # 3. Cash Flow Chart
+        elements.append(PageBreak())
+        elements.append(Paragraph("Annual Cash Flow", self.styles['SectionHeader']))
+        cashflow_chart = self._create_cashflow_chart(forecast_df)
+        if cashflow_chart:
+            elements.append(cashflow_chart)
+        elements.append(Spacer(1, 0.3*inch))
         
         return elements
     
     def _create_asset_chart(self, forecast_df: pd.DataFrame):
         """Create asset growth chart as an image."""
         try:
+            # Try using kaleido for plotly export
             fig = go.Figure()
             
             fig.add_trace(go.Scatter(
@@ -428,13 +434,14 @@ class RetirementReportGenerator:
             
             fig.update_yaxes(tickformat='$,.0f')
             
-            # Convert to image
-            img_bytes = fig.to_image(format="png", width=600, height=400)
+            # Convert to image using kaleido
+            img_bytes = fig.to_image(format="png", width=600, height=400, engine="kaleido")
             img = Image(io.BytesIO(img_bytes), width=6*inch, height=4*inch)
             
             return img
-        except:
-            return None
+        except Exception as e:
+            # Fallback: Create a text placeholder
+            return self._create_chart_placeholder("Asset Growth Chart", str(e))
     
     def _create_income_expenses_chart(self, forecast_df: pd.DataFrame):
         """Create income vs expenses chart."""
@@ -475,12 +482,12 @@ class RetirementReportGenerator:
             fig.update_yaxes(tickformat='$,.0f')
             
             # Convert to image
-            img_bytes = fig.to_image(format="png", width=600, height=400)
+            img_bytes = fig.to_image(format="png", width=600, height=400, engine="kaleido")
             img = Image(io.BytesIO(img_bytes), width=6*inch, height=4*inch)
             
             return img
-        except:
-            return None
+        except Exception as e:
+            return self._create_chart_placeholder("Income & Expenses Chart", str(e))
     
     def _create_cashflow_chart(self, forecast_df: pd.DataFrame):
         """Create cash flow chart."""
@@ -517,12 +524,50 @@ class RetirementReportGenerator:
             fig.update_yaxes(tickformat='$,.0f')
             
             # Convert to image
-            img_bytes = fig.to_image(format="png", width=600, height=400)
+            img_bytes = fig.to_image(format="png", width=600, height=400, engine="kaleido")
             img = Image(io.BytesIO(img_bytes), width=6*inch, height=4*inch)
             
             return img
-        except:
-            return None
+        except Exception as e:
+            return self._create_chart_placeholder("Cash Flow Chart", str(e))
+    
+    def _create_chart_placeholder(self, chart_name: str, error_msg: str = ""):
+        """Create a placeholder when chart cannot be generated."""
+        # Create a simple text box explaining charts are not available
+        elements = []
+        
+        text = f"""
+        <b>{chart_name}</b><br/>
+        <i>Note: Charts cannot be displayed in PDF format on this platform.</i><br/>
+        <font size="8">Please view interactive charts in the Streamlit app.</font>
+        """
+        
+        if error_msg and "kaleido" in error_msg.lower():
+            text += "<br/><font size=\"7\" color=\"gray\">(Chart rendering requires local installation)</font>"
+        
+        para = Paragraph(text, self.styles['CustomBody'])
+        
+        # Create a simple table as a visual placeholder
+        data = [
+            [chart_name],
+            ['Interactive charts available in the web application']
+        ]
+        
+        table = Table(data, colWidths=[6*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e5e7eb')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#374151')),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('BOX', (0, 0), (-1, -1), 1, colors.grey),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.grey),
+        ]))
+        
+        return table
     
     def _create_comprehensive_data_table(self, forecast_df: pd.DataFrame) -> List:
         """Create comprehensive year-by-year data tables."""
