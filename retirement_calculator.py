@@ -6,6 +6,7 @@ Calculates year-by-year projections of wealth, income, expenses, and taxes.
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Optional
+from datetime import datetime
 from tax_calculator import TaxCalculator
 from account_types import AccountPortfolio, AccountType, WithdrawalStrategy
 
@@ -145,7 +146,7 @@ class RetirementCalculator:
         portfolio = self.portfolio
         
         for year in range(years):
-            current_year = 2024 + year
+            current_year = datetime.now().year + year
             
             # Calculate total income from all people
             total_cash_income = 0.0
