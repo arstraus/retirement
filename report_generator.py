@@ -570,58 +570,92 @@ class RetirementReportGenerator:
         return table
     
     def _create_comprehensive_data_table(self, forecast_df: pd.DataFrame) -> List:
-        """Create comprehensive year-by-year data tables."""
+        """Create comprehensive year-by-year data table with all years."""
         elements = []
         
-        elements.append(Paragraph("Year-by-Year Projection", self.styles['CustomTitle']))
+        elements.append(Paragraph("Detailed Year-by-Year Projection", self.styles['CustomTitle']))
         elements.append(Spacer(1, 0.2*inch))
         
-        # Key columns to include
-        key_cols = ['Year', 'Age', 'Total Income', 'Expenses', 'Total Tax', 'Cash Flow', 'Assets (Nominal)']
+        # Expanded columns to include
+        key_cols = [
+            'Year', 'Age', 'Total Income', 'RSU Vesting', 'Social Security',
+            'Expenses', 'Total Tax', 'Cash Flow', 'Investment Gains', 
+            'Withdrawal', 'Assets (Nominal)', 'Assets (Real)'
+        ]
         
-        # Show first 20 years
-        elements.append(Paragraph("First 20 Years", self.styles['SectionHeader']))
-        first_years = forecast_df.head(20)[key_cols] if len(forecast_df) >= 20 else forecast_df[key_cols]
-        elements.extend(self._create_formatted_data_table(first_years))
+        # Filter to only columns that exist in the dataframe
+        available_cols = [col for col in key_cols if col in forecast_df.columns]
         
-        # Show middle years (sample every 5 years if forecast is long)
-        if len(forecast_df) > 40:
-            elements.append(PageBreak())
-            elements.append(Paragraph("Middle Years (Every 5 Years)", self.styles['SectionHeader']))
-            middle_start = 20
-            middle_end = len(forecast_df) - 20
-            middle_years = forecast_df.iloc[middle_start:middle_end:5][key_cols]
-            elements.extend(self._create_formatted_data_table(middle_years))
+        # Split into chunks to prevent overly long tables on single pages
+        # Show all data but paginate every 25 rows for readability
+        chunk_size = 25
+        num_chunks = (len(forecast_df) + chunk_size - 1) // chunk_size
         
-        # Show last 20 years
-        if len(forecast_df) > 20:
-            elements.append(PageBreak())
-            elements.append(Paragraph("Final 20 Years", self.styles['SectionHeader']))
-            last_years = forecast_df.tail(20)[key_cols]
-            elements.extend(self._create_formatted_data_table(last_years))
+        for chunk_idx in range(num_chunks):
+            if chunk_idx > 0:
+                elements.append(PageBreak())
+            
+            start_idx = chunk_idx * chunk_size
+            end_idx = min((chunk_idx + 1) * chunk_size, len(forecast_df))
+            
+            # Add section header for each chunk
+            if num_chunks > 1:
+                start_year = int(forecast_df.iloc[start_idx]['Year'])
+                end_year = int(forecast_df.iloc[end_idx - 1]['Year'])
+                elements.append(Paragraph(f"Years {start_year} - {end_year}", self.styles['SectionHeader']))
+            
+            chunk_df = forecast_df.iloc[start_idx:end_idx][available_cols]
+            elements.extend(self._create_formatted_data_table(chunk_df))
         
         return elements
     
     def _create_formatted_data_table(self, df: pd.DataFrame) -> List:
-        """Create a formatted data table segment."""
+        """Create a formatted data table segment with comprehensive columns."""
         elements = []
         
         # Format the dataframe
         display_df = df.copy()
         
         # Format currency columns
-        for col in ['Total Income', 'Expenses', 'Total Tax', 'Cash Flow', 'Assets (Nominal)']:
+        currency_cols = [
+            'Total Income', 'RSU Vesting', 'Social Security', 'Expenses', 
+            'Total Tax', 'Cash Flow', 'Investment Gains', 'Withdrawal',
+            'Assets (Nominal)', 'Assets (Real)'
+        ]
+        
+        for col in currency_cols:
             if col in display_df.columns:
-                display_df[col] = display_df[col].apply(lambda x: f"${x:,.0f}")
+                display_df[col] = display_df[col].apply(lambda x: f"${x/1000:.0f}k" if abs(x) >= 1000 else f"${x:.0f}")
         
         display_df['Year'] = display_df['Year'].astype(int)
         display_df['Age'] = display_df['Age'].astype(int)
         
+        # Shorten column names for better fit
+        display_df.columns = display_df.columns.str.replace('Total Income', 'Income')
+        display_df.columns = display_df.columns.str.replace('RSU Vesting', 'RSU')
+        display_df.columns = display_df.columns.str.replace('Social Security', 'SS')
+        display_df.columns = display_df.columns.str.replace('Total Tax', 'Tax')
+        display_df.columns = display_df.columns.str.replace('Investment Gains', 'Inv Gains')
+        display_df.columns = display_df.columns.str.replace('Assets (Nominal)', 'Assets')
+        display_df.columns = display_df.columns.str.replace('Assets (Real)', 'Real Assets')
+        
         # Convert to list for table
         data = [display_df.columns.tolist()] + display_df.values.tolist()
         
-        # Create table with adjusted column widths
-        col_widths = [0.6*inch, 0.6*inch, 1.2*inch, 1.1*inch, 1.0*inch, 1.1*inch, 1.4*inch]
+        # Dynamic column widths based on number of columns
+        num_cols = len(display_df.columns)
+        
+        # Allocate widths (total ~7 inches for landscape orientation)
+        if num_cols == 12:  # All columns
+            col_widths = [0.35*inch, 0.35*inch, 0.55*inch, 0.45*inch, 0.45*inch, 
+                         0.55*inch, 0.45*inch, 0.5*inch, 0.55*inch, 0.5*inch, 
+                         0.65*inch, 0.65*inch]
+        elif num_cols == 7:  # Original columns
+            col_widths = [0.5*inch] * num_cols
+        else:
+            # Dynamic allocation
+            col_widths = [7.0 / num_cols * inch] * num_cols
+        
         table = Table(data, colWidths=col_widths)
         
         table.setStyle(TableStyle([
@@ -630,18 +664,18 @@ class RetirementReportGenerator:
             ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
             ('ALIGN', (0, 0), (1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('FONTSIZE', (0, 0), (-1, 0), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 5),
             ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTSIZE', (0, 1), (-1, -1), 7),
-            ('TOPPADDING', (0, 1), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 3),
+            ('FONTSIZE', (0, 1), (-1, -1), 6),
+            ('TOPPADDING', (0, 1), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 2),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
         ]))
         
         elements.append(table)
-        elements.append(Spacer(1, 0.2*inch))
+        elements.append(Spacer(1, 0.15*inch))
         
         return elements
     
