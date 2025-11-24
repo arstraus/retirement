@@ -422,40 +422,43 @@ def main():
 
         people = []
         for i in range(num_adults):
-            # Get defaults from loaded scenario if available
-            if loaded_scenario and i < len(loaded_scenario['people']):
-                person_data = loaded_scenario['people'][i]
-                default_name = person_data['name']
-                default_age = person_data['age']
-                default_ret_age = person_data['retirement_age']
-                default_income = person_data['current_income']
-                default_rsu = person_data.get('annual_rsu_vesting', 0)
-                default_growth = person_data['income_growth_rate']
-                default_ret_income = person_data['retirement_income']
-            else:
-                default_name = f"Person {i+1}"
-                default_age = 30
-                default_ret_age = 65
-                default_income = 75000
-                default_rsu = 0
-                default_growth = 0.03
-                default_ret_income = 0
+            # Initialize session state for person fields if not exists
+            if f"name_{i}" not in st.session_state:
+                if loaded_scenario and i < len(loaded_scenario['people']):
+                    person_data = loaded_scenario['people'][i]
+                    st.session_state[f"name_{i}"] = person_data['name']
+                    st.session_state[f"age_{i}"] = person_data['age']
+                    st.session_state[f"ret_age_{i}"] = person_data['retirement_age']
+                    st.session_state[f"income_{i}"] = person_data['current_income']
+                    st.session_state[f"rsu_vesting_{i}"] = person_data.get('annual_rsu_vesting', 0)
+                    st.session_state[f"growth_{i}"] = person_data['income_growth_rate']
+                    st.session_state[f"ret_income_{i}"] = person_data['retirement_income']
+                else:
+                    st.session_state[f"name_{i}"] = f"Person {i+1}"
+                    st.session_state[f"age_{i}"] = 30
+                    st.session_state[f"ret_age_{i}"] = 65
+                    st.session_state[f"income_{i}"] = 75000
+                    st.session_state[f"rsu_vesting_{i}"] = 0
+                    st.session_state[f"growth_{i}"] = 0.03
+                    st.session_state[f"ret_income_{i}"] = 0
 
             with st.expander(f"Person {i+1} Details", expanded=(i == 0)):
                 name = st.text_input(
-                    f"Name", value=default_name, key=f"name_{i}")
+                    f"Name", key=f"name_{i}")
                 age = st.number_input(
                     f"Current Age",
                     min_value=18,
                     max_value=100,
-                    value=default_age,
                     step=1,
                     key=f"age_{i}")
+                # Ensure retirement age is at least current age
+                if st.session_state[f"ret_age_{i}"] < age:
+                    st.session_state[f"ret_age_{i}"] = age
+                
                 retirement_age = st.number_input(
                     f"Retirement Age",
                     min_value=age,
                     max_value=100,
-                    value=max(default_ret_age, age),
                     step=1,
                     key=f"ret_age_{i}"
                 )
@@ -463,7 +466,6 @@ def main():
                     f"Annual Cash Salary",
                     min_value=0,
                     max_value=10000000,
-                    value=int(default_income),
                     step=5000,
                     key=f"income_{i}",
                     help="Base salary/wages (not including RSUs)"
@@ -474,7 +476,6 @@ def main():
                     f"Annual RSU Vesting Income",
                     min_value=0,
                     max_value=5000000,
-                    value=int(default_rsu),
                     step=5000,
                     key=f"rsu_vesting_{i}",
                     help="Annual amount of RSUs that vest (taxed as income, stops at retirement)"
@@ -484,7 +485,6 @@ def main():
                     f"Annual Income Growth Rate",
                     min_value=0.0,
                     max_value=0.20,
-                    value=float(default_growth),
                     step=0.01,
                     format="%.2f",
                     key=f"growth_{i}",
@@ -495,7 +495,6 @@ def main():
                     f"Annual Income in Retirement (e.g., pension)",
                     min_value=0,
                     max_value=1000000,
-                    value=int(default_ret_income),
                     step=5000,
                     key=f"ret_income_{i}"
                 )
