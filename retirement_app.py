@@ -405,20 +405,17 @@ def main():
         # Household Configuration
         st.subheader("Household")
 
-        # Pre-populate from loaded scenario if available
-        # Check session state first, then loaded scenario
-        if 'num_adults' in st.session_state:
-            default_num_adults = st.session_state['num_adults']
-        elif loaded_scenario:
-            default_num_adults = len(loaded_scenario['people'])
-        else:
-            default_num_adults = 1
+        # Initialize num_adults in session state if not exists
+        if 'num_adults' not in st.session_state:
+            if loaded_scenario:
+                st.session_state['num_adults'] = len(loaded_scenario['people'])
+            else:
+                st.session_state['num_adults'] = 1
 
         num_adults = st.number_input(
             "Number of Adults",
             min_value=1,
             max_value=4,
-            value=default_num_adults,
             step=1,
             key="num_adults")
 
