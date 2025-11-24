@@ -454,11 +454,11 @@ class RetirementCalculator:
                 # Calculate taxes (simplified for speed)
                 total_tax = 0
                 if total_ordinary_income > 0:
-                    tax_calc = TaxCalculator(state=self.state)
-                    ordinary_income_tax = tax_calc.calculate_income_tax(
+                    ordinary_income_tax, _ = TaxCalculator.calculate_total_tax(
                         ordinary_income=total_ordinary_income,
                         capital_gains=0,
-                        num_people=len(self.people)
+                        state=self.state,
+                        filing_jointly=self.filing_jointly
                     )
                     total_tax = ordinary_income_tax
                 
