@@ -233,6 +233,10 @@ def main():
                             st.session_state['taxable'] = balances.get('taxable', 0)
                             st.session_state['hsa'] = balances.get('hsa', 0)
                         
+                        # Load one-time expenses if present
+                        if scenario_data.get('financial', {}).get('one_time_expenses'):
+                            st.session_state['onetime_expenses'] = scenario_data['financial']['one_time_expenses']
+                        
                         st.rerun()
                 with col_clear:
                     if st.button("Clear", use_container_width=True):
@@ -325,7 +329,8 @@ def main():
                     inflation_rate=params['inflation_rate'],
                     forecast_years=params['forecast_years'],
                     account_balances=params.get('account_balances'),
-                    contribution_allocation=params.get('contribution_allocation'))
+                    contribution_allocation=params.get('contribution_allocation'),
+                    one_time_expenses=params.get('one_time_expenses'))
 
                 json_str = ScenarioManager.scenario_to_json(scenario)
 
@@ -389,8 +394,8 @@ def main():
     loaded_scenario = st.session_state.get('loaded_scenario')
     apply_scenario = st.session_state.get('apply_scenario', False)
 
-    # Create tabs for Configure and Results
-    tab_config, tab_results = st.tabs(["Configure", "Results"])
+    # Create tabs for Configure, Results, and Compare
+    tab_config, tab_results, tab_compare = st.tabs(["Configure", "Results", "Compare Scenarios"])
 
     with tab_config:
         st.markdown("### Scenario Configuration")
@@ -664,6 +669,85 @@ def main():
             step=5000,
             help="Additional amount to save each year while working"
         )
+        
+        # One-Time Major Expenses
+        st.markdown("**One-Time Major Expenses (Optional)**")
+        use_onetime_expenses = st.checkbox(
+            "Add Major One-Time Expenses",
+            value=False,
+            help="Include large non-recurring expenses like car purchases, home repairs, etc."
+        )
+        
+        one_time_expenses = []
+        if use_onetime_expenses:
+            st.markdown("Add major expenses that occur in specific years:")
+            
+            # Initialize session state for expenses if not exists
+            if 'onetime_expenses' not in st.session_state:
+                st.session_state['onetime_expenses'] = []
+            
+            # UI to add expenses
+            with st.expander("Add/Edit Expenses", expanded=True):
+                col1, col2, col3 = st.columns([2, 2, 1])
+                
+                with col1:
+                    new_expense_year = st.number_input(
+                        "Year",
+                        min_value=datetime.now().year,
+                        max_value=datetime.now().year + 70,
+                        value=datetime.now().year + 5,
+                        step=1,
+                        key="new_expense_year"
+                    )
+                
+                with col2:
+                    new_expense_amount = st.number_input(
+                        "Amount",
+                        min_value=0,
+                        max_value=10000000,
+                        value=50000,
+                        step=5000,
+                        key="new_expense_amount"
+                    )
+                
+                with col3:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("Add", use_container_width=True):
+                        new_expense_desc = st.session_state.get('new_expense_desc', 'Major Expense')
+                        st.session_state['onetime_expenses'].append({
+                            'year': new_expense_year,
+                            'description': new_expense_desc,
+                            'amount': new_expense_amount
+                        })
+                        st.rerun()
+                
+                new_expense_desc = st.text_input(
+                    "Description",
+                    value="New Car",
+                    key="new_expense_desc"
+                )
+            
+            # Display current expenses
+            if st.session_state['onetime_expenses']:
+                st.markdown("**Planned Expenses:**")
+                
+                for idx, expense in enumerate(st.session_state['onetime_expenses']):
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    
+                    with col1:
+                        st.write(f"**{expense['year']}**")
+                    
+                    with col2:
+                        st.write(f"{expense.get('description', 'Expense')}: ${expense['amount']:,.0f}")
+                    
+                    with col3:
+                        if st.button("Remove", key=f"remove_expense_{idx}", use_container_width=True):
+                            st.session_state['onetime_expenses'].pop(idx)
+                            st.rerun()
+                
+                one_time_expenses = st.session_state['onetime_expenses']
+            else:
+                st.info("No one-time expenses added yet.")
 
         # Contribution Allocation (if using account types)
         if use_account_types and additional_contributions > 0:
@@ -760,6 +844,39 @@ def main():
             format="%.3f",
             help="Expected annual inflation rate"
         )
+        
+        # Monte Carlo Simulation Option
+        st.markdown("**Monte Carlo Simulation (Advanced)**")
+        use_monte_carlo = st.checkbox(
+            "Run Probabilistic Forecast",
+            value=False,
+            help="Model market volatility with 1,000 simulations showing range of possible outcomes"
+        )
+        
+        return_std_dev = 0.15
+        monte_carlo_iterations = 1000
+        
+        if use_monte_carlo:
+            col_mc1, col_mc2 = st.columns(2)
+            
+            with col_mc1:
+                return_std_dev = st.slider(
+                    "Return Volatility (Std Dev)",
+                    min_value=0.05,
+                    max_value=0.25,
+                    value=0.15,
+                    step=0.01,
+                    format="%.2f",
+                    help="Historical market volatility is ~15%"
+                )
+            
+            with col_mc2:
+                monte_carlo_iterations = st.select_slider(
+                    "Number of Simulations",
+                    options=[100, 500, 1000, 2000, 5000],
+                    value=1000,
+                    help="More simulations = more accurate, but slower"
+                )
 
         # Tax Configuration
         st.subheader("Tax Configuration")
@@ -878,16 +995,29 @@ def main():
                     social_security_benefit=ss_benefit,
                     inflation_rate=inflation_rate,
                     account_balances=account_balances,
-                    contribution_allocation=contribution_allocation
+                    contribution_allocation=contribution_allocation,
+                    one_time_expenses=one_time_expenses
                 )
 
                 forecast_df = calculator.calculate_forecast(
                     years=forecast_years)
                 summary = calculator.calculate_summary_metrics(forecast_df)
+                
+                # Run Monte Carlo if selected
+                monte_carlo_results = None
+                if use_monte_carlo:
+                    with st.spinner(f"Running {monte_carlo_iterations} Monte Carlo simulations..."):
+                        monte_carlo_results = calculator.run_monte_carlo_simulation(
+                            years=forecast_years,
+                            iterations=monte_carlo_iterations,
+                            return_std_dev=return_std_dev
+                        )
 
                 # Store in session state
                 st.session_state['forecast_df'] = forecast_df
                 st.session_state['summary'] = summary
+                st.session_state['monte_carlo_results'] = monte_carlo_results
+                st.session_state['use_monte_carlo'] = use_monte_carlo
                 st.session_state['current_params'] = {
                     'people': people,
                     'initial_assets': initial_assets,
@@ -901,7 +1031,8 @@ def main():
                     'inflation_rate': inflation_rate,
                     'forecast_years': forecast_years,
                     'account_balances': account_balances,
-                    'contribution_allocation': contribution_allocation
+                    'contribution_allocation': contribution_allocation,
+                    'one_time_expenses': one_time_expenses
                 }
                 st.success(
                     "Forecast calculated! View results in the 'Results' tab.")
@@ -1051,6 +1182,121 @@ def main():
                 )
             
             st.markdown("---")
+            
+            # Monte Carlo Results (if ran simulation)
+            if st.session_state.get('use_monte_carlo') and st.session_state.get('monte_carlo_results'):
+                st.subheader("Monte Carlo Simulation Results")
+                
+                mc_results = st.session_state['monte_carlo_results']
+                
+                # Success rate metric
+                col_mc1, col_mc2, col_mc3 = st.columns(3)
+                
+                with col_mc1:
+                    st.metric(
+                        "Success Rate",
+                        f"{mc_results['success_rate']:.1f}%",
+                        help="Percentage of simulations where assets lasted the full period"
+                    )
+                
+                with col_mc2:
+                    final_assets = mc_results['final_assets_distribution']
+                    median_final = np.median([x for x in final_assets if x > 0]) if any(x > 0 for x in final_assets) else 0
+                    st.metric(
+                        "Median Final Assets",
+                        format_currency(median_final),
+                        help="Middle outcome across all simulations"
+                    )
+                
+                with col_mc3:
+                    st.metric(
+                        "Simulations Run",
+                        f"{mc_results['num_simulations']:,}",
+                        help="Number of scenarios analyzed"
+                    )
+                
+                # Probability bands chart
+                st.markdown("**Asset Projection Probability Bands**")
+                
+                percentiles_df = mc_results['percentiles']
+                
+                fig_mc = go.Figure()
+                
+                # Add confidence bands
+                fig_mc.add_trace(go.Scatter(
+                    x=percentiles_df['Year'],
+                    y=percentiles_df['p90'],
+                    name='90th Percentile (Optimistic)',
+                    line=dict(color='rgba(0, 255, 0, 0.3)', width=1),
+                    showlegend=True
+                ))
+                
+                fig_mc.add_trace(go.Scatter(
+                    x=percentiles_df['Year'],
+                    y=percentiles_df['p75'],
+                    name='75th Percentile',
+                    line=dict(color='rgba(0, 200, 0, 0)', width=0),
+                    fill='tonexty',
+                    fillcolor='rgba(0, 255, 0, 0.1)',
+                    showlegend=True
+                ))
+                
+                fig_mc.add_trace(go.Scatter(
+                    x=percentiles_df['Year'],
+                    y=percentiles_df['p50'],
+                    name='50th Percentile (Median)',
+                    line=dict(color='#1f77b4', width=3),
+                    showlegend=True
+                ))
+                
+                fig_mc.add_trace(go.Scatter(
+                    x=percentiles_df['Year'],
+                    y=percentiles_df['p25'],
+                    name='25th Percentile',
+                    line=dict(color='rgba(255, 0, 0, 0)', width=0),
+                    fill='tonexty',
+                    fillcolor='rgba(255, 0, 0, 0.1)',
+                    showlegend=True
+                ))
+                
+                fig_mc.add_trace(go.Scatter(
+                    x=percentiles_df['Year'],
+                    y=percentiles_df['p10'],
+                    name='10th Percentile (Pessimistic)',
+                    line=dict(color='rgba(255, 0, 0, 0.3)', width=1),
+                    showlegend=True
+                ))
+                
+                fig_mc.update_layout(
+                    title="Range of Possible Outcomes (Monte Carlo Simulation)",
+                    xaxis_title="Year",
+                    yaxis_title="Assets ($)",
+                    hovermode='x unified',
+                    height=500,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                
+                fig_mc.update_yaxes(tickformat='$,.0f')
+                
+                st.plotly_chart(fig_mc, use_container_width=True)
+                
+                # Interpretation
+                if mc_results['success_rate'] >= 90:
+                    st.success(f"**Excellent:** {mc_results['success_rate']:.1f}% success rate suggests a very robust retirement plan.")
+                elif mc_results['success_rate'] >= 75:
+                    st.info(f"**Good:** {mc_results['success_rate']:.1f}% success rate indicates a solid plan with acceptable risk.")
+                elif mc_results['success_rate'] >= 50:
+                    st.warning(f"**Moderate Risk:** {mc_results['success_rate']:.1f}% success rate. Consider increasing savings or reducing expenses.")
+                else:
+                    st.error(f"**High Risk:** {mc_results['success_rate']:.1f}% success rate. Significant adjustments recommended.")
+                
+                st.markdown("---")
 
             # Visualizations
             st.subheader("Wealth Over Time")
@@ -1451,6 +1697,181 @@ def main():
                     use_container_width=True,
                     height=500
                 )
+    
+    # Compare Scenarios Tab
+    with tab_compare:
+        st.markdown("### Compare Retirement Scenarios")
+        st.markdown("Compare different retirement plans side-by-side to make informed decisions.")
+        st.markdown("---")
+        
+        # Initialize comparison scenarios in session state
+        if 'comparison_scenarios' not in st.session_state:
+            st.session_state['comparison_scenarios'] = []
+        
+        # Option to add current scenario to comparison
+        col_add1, col_add2 = st.columns([3, 1])
+        
+        with col_add1:
+            comparison_name = st.text_input(
+                "Name for current scenario",
+                value="Scenario " + str(len(st.session_state['comparison_scenarios']) + 1),
+                key="comparison_scenario_name"
+            )
+        
+        with col_add2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Add to Compare", use_container_width=True):
+                if 'forecast_df' in st.session_state and 'summary' in st.session_state:
+                    st.session_state['comparison_scenarios'].append({
+                        'name': comparison_name,
+                        'forecast_df': st.session_state['forecast_df'].copy(),
+                        'summary': st.session_state['summary'].copy(),
+                        'params': st.session_state.get('current_params', {}).copy()
+                    })
+                    st.success(f"Added '{comparison_name}' to comparison!")
+                    st.rerun()
+                else:
+                    st.warning("Please calculate a forecast first!")
+        
+        # Show comparison if we have scenarios
+        if len(st.session_state['comparison_scenarios']) >= 2:
+            st.markdown("---")
+            st.subheader("Scenario Comparison")
+            
+            # Select scenarios to compare (max 3)
+            scenario_names = [s['name'] for s in st.session_state['comparison_scenarios']]
+            
+            selected_scenarios = st.multiselect(
+                "Select scenarios to compare (max 3)",
+                options=scenario_names,
+                default=scenario_names[:min(3, len(scenario_names))],
+                max_selections=3
+            )
+            
+            if len(selected_scenarios) >= 2:
+                # Get selected scenario data
+                scenarios_to_compare = [
+                    s for s in st.session_state['comparison_scenarios'] 
+                    if s['name'] in selected_scenarios
+                ]
+                
+                # Comparison metrics table
+                st.markdown("**Key Metrics Comparison**")
+                
+                comparison_data = []
+                metrics = [
+                    ('Metric', 'metric_name'),
+                    ('Assets at Retirement', lambda s: format_currency(s['summary'].get('retirement_assets', 0))),
+                    ('Peak Assets', lambda s: format_currency(s['summary']['peak_assets'])),
+                    ('Peak Year', lambda s: str(int(s['summary']['peak_year']))),
+                    ('Final Assets', lambda s: format_currency(s['summary']['final_assets'])),
+                    ('Total Taxes Paid', lambda s: format_currency(s['summary']['total_taxes_paid'])),
+                    ('Success', lambda s: '✓ Sustainable' if not s['summary'].get('assets_depleted') else f"✗ Depleted year {int(s['summary'].get('depletion_year', 0))}")
+                ]
+                
+                # Build comparison table
+                for metric_name, value_func in metrics:
+                    if metric_name == 'Metric':
+                        row = ['Metric'] + [s['name'] for s in scenarios_to_compare]
+                    else:
+                        row = [metric_name] + [value_func(s) for s in scenarios_to_compare]
+                    comparison_data.append(row)
+                
+                # Display as dataframe for better formatting
+                comparison_df = pd.DataFrame(comparison_data[1:], columns=comparison_data[0])
+                st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+                
+                st.markdown("---")
+                
+                # Overlay chart
+                st.markdown("**Asset Trajectory Comparison**")
+                
+                fig_compare = go.Figure()
+                
+                colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
+                for idx, scenario in enumerate(scenarios_to_compare):
+                    forecast = scenario['forecast_df']
+                    fig_compare.add_trace(go.Scatter(
+                        x=forecast['Year'],
+                        y=forecast['Assets (Nominal)'],
+                        name=scenario['name'],
+                        line=dict(color=colors[idx], width=3),
+                        mode='lines'
+                    ))
+                
+                fig_compare.update_layout(
+                    title="Asset Comparison Over Time",
+                    xaxis_title="Year",
+                    yaxis_title="Assets ($)",
+                    hovermode='x unified',
+                    height=500,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                
+                fig_compare.update_yaxes(tickformat='$,.0f')
+                
+                st.plotly_chart(fig_compare, use_container_width=True)
+                
+                # Input differences table
+                st.markdown("---")
+                st.markdown("**Input Differences**")
+                
+                if len(scenarios_to_compare) >= 2:
+                    s1 = scenarios_to_compare[0]
+                    s2 = scenarios_to_compare[1]
+                    
+                    differences = []
+                    
+                    # Compare key parameters
+                    param_checks = [
+                        ('Initial Assets', 'initial_assets'),
+                        ('Annual Expenses', 'annual_expenses'),
+                        ('Annual Savings', 'additional_contributions'),
+                        ('Investment Return', 'investment_return'),
+                        ('Forecast Years', 'forecast_years')
+                    ]
+                    
+                    for param_name, param_key in param_checks:
+                        val1 = s1['params'].get(param_key, 0)
+                        val2 = s2['params'].get(param_key, 0)
+                        
+                        if val1 != val2:
+                            if param_key == 'investment_return':
+                                diff_text = f"{val1*100:.1f}% vs {val2*100:.1f}%"
+                            elif param_key == 'forecast_years':
+                                diff_text = f"{val1} years vs {val2} years"
+                            else:
+                                diff_text = f"${val1:,.0f} vs ${val2:,.0f}"
+                            
+                            differences.append({
+                                'Parameter': param_name,
+                                s1['name']: diff_text.split(' vs ')[0],
+                                s2['name']: diff_text.split(' vs ')[1]
+                            })
+                    
+                    if differences:
+                        diff_df = pd.DataFrame(differences)
+                        st.dataframe(diff_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Scenarios have identical inputs.")
+        
+        elif len(st.session_state['comparison_scenarios']) == 1:
+            st.info("Add at least one more scenario to enable comparison.")
+        else:
+            st.info("Add scenarios using the 'Add to Compare' button above after calculating forecasts.")
+        
+        # Clear comparison scenarios
+        if len(st.session_state['comparison_scenarios']) > 0:
+            st.markdown("---")
+            if st.button("Clear All Comparison Scenarios"):
+                st.session_state['comparison_scenarios'] = []
+                st.rerun()
 
 
 if __name__ == "__main__":

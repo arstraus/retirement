@@ -26,7 +26,8 @@ class ScenarioManager:
         inflation_rate: float,
         forecast_years: int,
         account_balances: Dict[str, float] = None,
-        contribution_allocation: Dict[str, float] = None
+        contribution_allocation: Dict[str, float] = None,
+        one_time_expenses: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Create a scenario dictionary that can be saved to JSON.
@@ -56,7 +57,8 @@ class ScenarioManager:
                 "expense_growth_rate": expense_growth_rate,
                 "additional_contributions": additional_contributions,
                 "account_balances": account_balances,
-                "contribution_allocation": contribution_allocation
+                "contribution_allocation": contribution_allocation,
+                "one_time_expenses": one_time_expenses or []
             },
             "investment": {
                 "investment_return_rate": investment_return_rate,

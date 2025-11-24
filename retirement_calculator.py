@@ -5,7 +5,7 @@ Calculates year-by-year projections of wealth, income, expenses, and taxes.
 
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 from tax_calculator import TaxCalculator
 from account_types import AccountPortfolio, AccountType, WithdrawalStrategy
@@ -82,7 +82,8 @@ class RetirementCalculator:
         social_security_benefit: float = 0.0,
         inflation_rate: float = 0.025,
         account_balances: Optional[Dict[str, float]] = None,
-        contribution_allocation: Optional[Dict[str, float]] = None
+        contribution_allocation: Optional[Dict[str, float]] = None,
+        one_time_expenses: Optional[List[Dict[str, Any]]] = None
     ):
         """
         Initialize the retirement calculator.
@@ -100,6 +101,7 @@ class RetirementCalculator:
             inflation_rate: Expected inflation rate
             account_balances: Dict of initial balances by account type (e.g., {'traditional_401k': 100000})
             contribution_allocation: Dict of contribution percentages by account type (must sum to 1.0)
+            one_time_expenses: List of one-time expenses (e.g., [{'year': 2030, 'description': 'New Car', 'amount': 45000}])
         """
         self.people = people
         self.initial_assets = initial_assets
@@ -129,6 +131,10 @@ class RetirementCalculator:
         
         # Contribution allocation (where new savings go)
         self.contribution_allocation = contribution_allocation or {'taxable': 1.0}
+        
+        # One-time expenses (e.g., car purchases, major repairs)
+        # Format: [{'year': 2030, 'description': 'New Car', 'amount': 45000}, ...]
+        self.one_time_expenses = one_time_expenses or []
     
     def calculate_forecast(self, years: int = 50) -> pd.DataFrame:
         """
@@ -173,6 +179,11 @@ class RetirementCalculator:
             
             # Calculate expenses for this year
             expenses = self.annual_expenses * ((1 + self.expense_growth_rate) ** year)
+            
+            # Add any one-time expenses for this year
+            for expense in self.one_time_expenses:
+                if expense.get('year') == current_year:
+                    expenses += expense.get('amount', 0)
             
             # Get total assets before growth
             assets_before_growth = portfolio.get_total_balance()
@@ -353,5 +364,161 @@ class RetirementCalculator:
             'total_investment_gains': total_gains,
             'assets_depleted': assets_depleted,
             'depletion_year': depletion_year
+        }
+    
+    def run_monte_carlo_simulation(
+        self, 
+        years: int = 50, 
+        iterations: int = 1000, 
+        return_std_dev: float = 0.15
+    ) -> Dict:
+        """
+        Run Monte Carlo simulation with variable investment returns.
+        
+        Args:
+            years: Number of years to forecast
+            iterations: Number of simulations to run
+            return_std_dev: Standard deviation of returns (default 15%)
+            
+        Returns:
+            Dictionary containing:
+                - simulations: List of DataFrames (one per simulation)
+                - percentiles: DataFrame with 10th, 50th, 90th percentile assets
+                - success_rate: Percentage of simulations where assets last
+                - final_assets_distribution: List of final asset values
+        """
+        np.random.seed(42)  # For reproducibility
+        
+        simulations = []
+        final_assets = []
+        success_count = 0
+        
+        base_return = self.investment_return_rate
+        
+        for sim in range(iterations):
+            # Generate random returns for each year (normal distribution)
+            annual_returns = np.random.normal(base_return, return_std_dev, years)
+            
+            # Temporarily override the investment return rate
+            original_return = self.investment_return_rate
+            
+            # Run simulation with variable returns
+            sim_results = []
+            assets = self.initial_assets
+            portfolio = AccountPortfolio(self.initial_assets, self.account_balances)
+            
+            for year in range(years):
+                current_year = datetime.now().year + year
+                
+                # Use this year's random return
+                year_return = annual_returns[year]
+                
+                # Run one year of simulation (simplified version)
+                # We'll reuse the core logic but with variable returns
+                oldest_age = max(person.age + year for person in self.people)
+                anyone_working = any(person.age + year < person.retirement_age for person in self.people)
+                
+                # Calculate income (same logic as main forecast)
+                total_cash_income = sum(
+                    person.current_income * ((1 + person.income_growth_rate) ** year)
+                    if person.age + year < person.retirement_age else person.retirement_income
+                    for person in self.people
+                )
+                
+                total_rsu_vesting = sum(
+                    person.annual_rsu_vesting * ((1 + person.income_growth_rate) ** year)
+                    if person.age + year < person.retirement_age else 0
+                    for person in self.people
+                )
+                
+                total_ordinary_income = total_cash_income + total_rsu_vesting
+                
+                # Social Security
+                social_security_income = self.social_security_benefit if oldest_age >= self.social_security_age else 0
+                total_ordinary_income += social_security_income
+                
+                # Expenses
+                years_elapsed = year
+                expenses = self.annual_expenses * ((1 + self.expense_growth_rate) ** years_elapsed)
+                
+                # Add one-time expenses
+                for expense in self.one_time_expenses:
+                    if expense.get('year') == current_year:
+                        expenses += expense.get('amount', 0)
+                
+                # Additional contributions
+                additional_contribution = self.additional_contributions if anyone_working else 0
+                
+                # Calculate taxes (simplified for speed)
+                total_tax = 0
+                if total_ordinary_income > 0:
+                    tax_calc = TaxCalculator(state=self.state)
+                    ordinary_income_tax = tax_calc.calculate_income_tax(
+                        ordinary_income=total_ordinary_income,
+                        capital_gains=0,
+                        num_people=len(self.people)
+                    )
+                    total_tax = ordinary_income_tax
+                
+                net_income = total_ordinary_income - total_tax
+                cash_flow = net_income - expenses + additional_contribution
+                
+                # Apply investment gains with THIS year's random return
+                investment_gains = assets * year_return
+                
+                # Update assets
+                assets = assets + cash_flow + investment_gains
+                
+                # Store minimal results (just what we need for percentiles)
+                sim_results.append({
+                    'Year': current_year,
+                    'Assets': assets
+                })
+                
+                # Stop if depleted
+                if assets <= 0:
+                    break
+            
+            # Store results
+            sim_df = pd.DataFrame(sim_results)
+            simulations.append(sim_df)
+            
+            # Track final assets
+            if len(sim_df) > 0:
+                final_asset_value = sim_df.iloc[-1]['Assets']
+                final_assets.append(final_asset_value)
+                if final_asset_value > 0:
+                    success_count += 1
+            else:
+                final_assets.append(0)
+        
+        # Calculate percentiles across all simulations
+        # Create a matrix of assets: rows=years, cols=simulations
+        max_years = max(len(sim) for sim in simulations)
+        asset_matrix = np.zeros((max_years, iterations))
+        
+        for sim_idx, sim_df in enumerate(simulations):
+            for year_idx, row in sim_df.iterrows():
+                if year_idx < max_years:
+                    asset_matrix[year_idx, sim_idx] = row['Assets']
+        
+        # Calculate percentiles for each year
+        years_list = range(datetime.now().year, datetime.now().year + max_years)
+        percentiles_df = pd.DataFrame({
+            'Year': years_list,
+            'p10': np.percentile(asset_matrix, 10, axis=1),
+            'p25': np.percentile(asset_matrix, 25, axis=1),
+            'p50': np.percentile(asset_matrix, 50, axis=1),
+            'p75': np.percentile(asset_matrix, 75, axis=1),
+            'p90': np.percentile(asset_matrix, 90, axis=1)
+        })
+        
+        success_rate = (success_count / iterations) * 100
+        
+        return {
+            'percentiles': percentiles_df,
+            'success_rate': success_rate,
+            'final_assets_distribution': final_assets,
+            'num_simulations': iterations
         }
 
