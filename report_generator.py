@@ -79,7 +79,8 @@ class RetirementReportGenerator:
         social_security: Dict[str, Any],
         forecast_years: int,
         summary: Dict[str, Any],
-        forecast_df: pd.DataFrame
+        forecast_df: pd.DataFrame,
+        monte_carlo_results: Dict[str, Any] = None
     ) -> bytes:
         """
         Generate a comprehensive PDF report.
@@ -118,6 +119,11 @@ class RetirementReportGenerator:
         # Executive Summary
         elements.extend(self._create_executive_summary(summary, forecast_df))
         elements.append(PageBreak())
+        
+        # Monte Carlo Results (if available)
+        if monte_carlo_results:
+            elements.extend(self._create_monte_carlo_section(monte_carlo_results))
+            elements.append(PageBreak())
         
         # Scenario Inputs
         elements.extend(self._create_inputs_section(
@@ -216,6 +222,84 @@ class RetirementReportGenerator:
         
         return elements
     
+    def _create_monte_carlo_section(self, monte_carlo_results: Dict[str, Any]) -> List:
+        """Create Monte Carlo simulation results section."""
+        elements = []
+        
+        elements.append(Paragraph("Monte Carlo Simulation Results", self.styles['CustomTitle']))
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Summary paragraph
+        success_rate = monte_carlo_results['success_rate']
+        num_sims = monte_carlo_results['num_simulations']
+        
+        intro_text = f"""
+        This forecast included a Monte Carlo simulation with <b>{num_sims:,} iterations</b> to model market volatility 
+        and provide a probabilistic view of potential outcomes. Each simulation used randomly varied investment returns 
+        based on historical market volatility.
+        """
+        elements.append(Paragraph(intro_text, self.styles['CustomBody']))
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Key Monte Carlo metrics
+        percentiles_df = monte_carlo_results['percentiles']
+        final_row = percentiles_df.iloc[-1]
+        
+        mc_data = [
+            ['Metric', 'Value'],
+            ['Success Rate', f"{success_rate:.1f}%"],
+            ['Number of Simulations', f"{num_sims:,}"],
+            ['Median Final Assets (50th %ile)', self._format_currency(final_row['p50'])],
+            ['Pessimistic Case (10th %ile)', self._format_currency(final_row['p10'])],
+            ['Optimistic Case (90th %ile)', self._format_currency(final_row['p90'])],
+        ]
+        
+        table = Table(mc_data, colWidths=[3*inch, 2*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ]))
+        
+        elements.append(table)
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Risk assessment
+        if success_rate >= 90:
+            risk_color = 'green'
+            risk_text = f"<font color='{risk_color}'><b>Excellent:</b> {success_rate:.1f}% success rate suggests a very robust retirement plan with high confidence.</font>"
+        elif success_rate >= 75:
+            risk_color = 'blue'
+            risk_text = f"<font color='{risk_color}'><b>Good:</b> {success_rate:.1f}% success rate indicates a solid plan with acceptable risk levels.</font>"
+        elif success_rate >= 50:
+            risk_color = 'orange'
+            risk_text = f"<font color='{risk_color}'><b>Moderate Risk:</b> {success_rate:.1f}% success rate. Consider increasing savings or reducing expenses for better security.</font>"
+        else:
+            risk_color = 'red'
+            risk_text = f"<font color='{risk_color}'><b>High Risk:</b> {success_rate:.1f}% success rate. Significant plan adjustments are recommended.</font>"
+        
+        elements.append(Paragraph(risk_text, self.styles['CustomBody']))
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Interpretation guide
+        interpretation = """
+        <b>Understanding Success Rate:</b><br/>
+        The success rate represents the percentage of simulations where assets lasted through the entire forecast period. 
+        A rate of 75% or higher is generally considered acceptable for retirement planning, though individual risk tolerance varies.
+        The probability bands show the range of potential outcomes based on historical market volatility.
+        """
+        elements.append(Paragraph(interpretation, self.styles['CustomBody']))
+        
+        return elements
+    
     def _create_inputs_section(
         self,
         people: List[Dict[str, Any]],
@@ -271,6 +355,37 @@ class RetirementReportGenerator:
             HSA: {self._format_currency(balances.get('hsa', 0))}
             """
             elements.append(Paragraph(account_info, self.styles['CustomBody']))
+        
+        # One-time expenses if available
+        if financial.get('one_time_expenses') and len(financial['one_time_expenses']) > 0:
+            elements.append(Spacer(1, 0.1*inch))
+            elements.append(Paragraph("<b>One-Time Major Expenses:</b>", self.styles['CustomBody']))
+            
+            # Create table for one-time expenses
+            expense_data = [['Year', 'Description', 'Amount']]
+            for expense in sorted(financial['one_time_expenses'], key=lambda x: x.get('year', 0)):
+                expense_data.append([
+                    str(expense.get('year', '')),
+                    expense.get('description', 'Expense'),
+                    self._format_currency(expense.get('amount', 0))
+                ])
+            
+            expense_table = Table(expense_data, colWidths=[1*inch, 2.5*inch, 1.5*inch])
+            expense_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#374151')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('TOPPADDING', (0, 1), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+            ]))
+            
+            elements.append(expense_table)
         
         elements.append(Spacer(1, 0.2*inch))
         

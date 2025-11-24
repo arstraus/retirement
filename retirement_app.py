@@ -1148,7 +1148,8 @@ def main():
                                 social_security=ss_data,
                                 forecast_years=params.get('forecast_years', 50),
                                 summary=summary,
-                                forecast_df=forecast_df
+                                forecast_df=forecast_df,
+                                monte_carlo_results=st.session_state.get('monte_carlo_results')
                             )
                             
                             # Store in session state for download
