@@ -405,10 +405,9 @@ class RetirementCalculator:
             # Temporarily override the investment return rate
             original_return = self.investment_return_rate
             
-            # Run simulation with variable returns
+            # Run simulation with variable returns (simplified for speed)
             sim_results = []
             assets = self.initial_assets
-            portfolio = AccountPortfolio(self.initial_assets, self.account_balances)
             
             for year in range(years):
                 current_year = datetime.now().year + year
