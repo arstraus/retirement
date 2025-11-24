@@ -132,6 +132,9 @@ class RetirementCalculator:
         # Contribution allocation (where new savings go)
         self.contribution_allocation = contribution_allocation or {'taxable': 1.0}
         
+        # Store account balances for Monte Carlo simulation
+        self.account_balances = account_balances
+        
         # One-time expenses (e.g., car purchases, major repairs)
         # Format: [{'year': 2030, 'description': 'New Car', 'amount': 45000}, ...]
         self.one_time_expenses = one_time_expenses or []
