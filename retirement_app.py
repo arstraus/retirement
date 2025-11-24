@@ -1197,12 +1197,13 @@ def main():
                     )
                 
                 with col_mc2:
-                    final_assets = mc_results['final_assets_distribution']
-                    median_final = np.median([x for x in final_assets if x > 0]) if any(x > 0 for x in final_assets) else 0
+                    # Get median from the percentiles at the final year (matches chart)
+                    percentiles_df = mc_results['percentiles']
+                    median_final = percentiles_df['p50'].iloc[-1]
                     st.metric(
                         "Median Final Assets",
                         format_currency(median_final),
-                        help="Middle outcome across all simulations"
+                        help="50th percentile outcome (median) - matches blue line on chart"
                     )
                 
                 with col_mc3:
